@@ -957,6 +957,16 @@ class GatewayBusySessionMixin:
                 return True
             return False  # base adapter queues silently behind the active turn
 
+        from gateway.admission_policy import check_gateway_message
+        decision = await check_gateway_message(self, event)
+        if not decision.allow:
+            if decision.reply:
+                adapter = self._delivery_adapter_for(event.source)
+                if adapter:
+                    await adapter.send(event.source.chat_id, decision.reply,
+                                       metadata=self._thread_metadata_for_source(event.source, event.message_id))
+            return True
+
         # Same authorization gate as the cold path, else unauthorized users in shared threads
         # inject messages into a session they don't own.
         from gateway.run import _AGENT_PENDING_SENTINEL

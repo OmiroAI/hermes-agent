@@ -36,6 +36,7 @@
         "agent.video_gen_provider",
         "agent.web_search_provider",
         "cli",
+        "gateway.admission_policy:admit_gateway_event",
         "gateway.config",
         "gateway.platform_registry",
         "gateway.platforms._shared",

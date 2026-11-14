@@ -128,6 +128,11 @@ async def admit_producer(adapter, event):
     ``event._consumer_reply`` for the caller's own reply leg), and never for a replay of an
     already-committed delivery (provider retry, relay re-send) nor at execution (PLG-5)."""
     async with producer_scope(adapter, event) as authority:
+        from gateway.admission_policy import check_gateway_message
+        decision = await check_gateway_message(authority.runner, event)
+        if not decision.allow:
+            event._consumer_reply = decision.reply
+            return None
         from gateway.config import Platform
         from gateway.run_inbound_consumer import POST_ADMISSION_HOOK
         from hermes_cli.lifecycle import has_hook
