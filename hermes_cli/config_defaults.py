@@ -2085,14 +2085,14 @@ DEFAULT_CONFIG = {
         },
     },
     "gateway": {  # Gateway settings (messaging platforms: Telegram, Discord, Slack, ...).
+        "admission_policy": None,  # Optional required external policy; invalid/error/timeout denies ingress.
         "unmanaged_idle_exit_seconds": 600,  # client-auto-started gateway only; 0 disables
         # Seconds a SIGTERM-interrupted agent unwinds before teardown (short: service stop budgets).
         "signal_interrupt_grace_timeout": 1,
         "service_install_choice": None,  # null | install | decline; never authorizes ordinary launch installation.
-        # Durable delivery-obligation ledger: final responses are recorded in state.db around the
+        # Delivery ledger: final responses are recorded in state.db around the
         # platform send; a gateway that died between finalize and platform ACK redelivers on next
-        # boot (ambiguous cases carry a "recovered reply — may be a duplicate" marker;
-        # at-least-once). Disable to lose in-flight final responses on crash/restart.
+        # boot (ambiguous cases say "recovered reply — may be a duplicate"). At least once.
         "delivery_ledger": True,
         # Seconds the gateway waits for a single messaging platform to finish connecting during startup (and
         # on reconnect). Discord in particular can blow past the old fixed 30s when an account has many

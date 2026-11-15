@@ -44,6 +44,7 @@ with a name allows that one name only.
 | `agent.video_gen_provider` | whole module | developer-guide / plugins docs |
 | `agent.web_search_provider` | whole module | developer-guide / plugins docs |
 | `cli` | whole module | developer-guide / plugins docs |
+| `gateway.admission_policy` | `admit_gateway_event` | developer-guide / plugins docs |
 | `gateway.config` | whole module | developer-guide / plugins docs |
 | `gateway.platform_registry` | whole module | developer-guide / plugins docs |
 | `gateway.platforms._shared` | whole module | developer-guide / plugins docs |
