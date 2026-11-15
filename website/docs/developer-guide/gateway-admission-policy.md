@@ -36,6 +36,12 @@ The command receives one UTF-8 JSON document on stdin, followed by EOF:
 ```
 
 Source fields come from normalized transport metadata; text is untrusted. Stable
+message actors override sender-less shared-session sources; an explicitly empty
+actor remains empty. When the transport provides quoted text for the current
+message, the frame also includes optional `reply_to_text`. This is untrusted task
+context, never authorization or a lookup of previous private conversations. It
+shares the frame size limit. Consumers must accept this optional field; deploy
+updated consumers with this bridge (older strict consumers safely deny replies).
 IDs, platform and chat context must be checked together. An absent identity is
 not founder/owner authorization. The payload intentionally excludes histories,
 private memory, credentials, arbitrary SDK objects and mutable runner handles.

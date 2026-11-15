@@ -84,6 +84,7 @@ async def _exchange(command: list[str], frame: bytes, timeout: float) -> bytes:
 
 async def admit_gateway_event(
     kind: str, source: Any, *, text: str = "", message_id: str | None = None,
+    reply_to_text: str | None = None,
 ) -> AdmissionDecision:
     """Allow by default; when configured, only a valid explicit allow proceeds.
 
@@ -104,8 +105,13 @@ async def admit_gateway_event(
                 or isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                 or not math.isfinite(timeout) or not 0 < timeout <= 900):
             raise ValueError("invalid policy command or timeout")
-        frame = json.dumps({"version": 1, "kind": kind, "source": _source_fields(source),
-                            "text": text, "message_id": message_id}, allow_nan=False).encode()
+        envelope = {"version": 1, "kind": kind, "source": _source_fields(source),
+                    "text": text, "message_id": message_id}
+        if reply_to_text is not None:
+            if not isinstance(reply_to_text, str):
+                raise ValueError("invalid quoted message")
+            envelope["reply_to_text"] = reply_to_text
+        frame = json.dumps(envelope, allow_nan=False).encode()
         if len(frame) > MAX_FRAME:
             raise ValueError("oversized policy request")
         result = json.loads(await _exchange(command, frame, timeout))
@@ -134,4 +140,5 @@ async def check_gateway_message(runner: Any, event: Any) -> AdmissionDecision:
         if actor is not None:
             source["user_id"] = str(actor)
         return await admit_gateway_event(
-            "message", source, text=event.text or "", message_id=str(event.message_id or ""))
+            "message", source, text=event.text or "", message_id=str(event.message_id or ""),
+            reply_to_text=getattr(event, "reply_to_text", None))

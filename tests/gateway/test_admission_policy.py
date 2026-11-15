@@ -199,7 +199,7 @@ async def test_observed_group_admission_uses_transport_actor(monkeypatch, lane, 
     from plugins.platforms.telegram.telegram_group_observe import apply_group_observe_attribution
 
     source = SessionSource(platform=Platform.TELEGRAM, chat_id="test-group", chat_type="group", user_id=actor)
-    event = MessageEvent(source=source, user_id=actor, text="request", raw_message=SimpleNamespace(), message_id="test")
+    event = MessageEvent(source=source, user_id=actor, text="continue that task", raw_message=SimpleNamespace(), message_id="test", reply_to_text="Synthetic quoted task brief")
     observer = SimpleNamespace(
         _telegram_observe_unmentioned_group_messages=lambda: True,
         _is_group_chat=lambda message: True,
@@ -212,7 +212,7 @@ async def test_observed_group_admission_uses_transport_actor(monkeypatch, lane, 
     event = apply_group_observe_attribution(observer, event)
     assert event.source.user_id is None
     command(monkeypatch, 'import json,sys; f=json.load(sys.stdin); '
-            'actor=f["source"]["user_id"]; '
+            'assert f["reply_to_text"]=="Synthetic quoted task brief"; actor=f["source"]["user_id"]; '
             'print(json.dumps({"decision":"deny","reply":"scoped" if actor in '
             '["founder-a","founder-b","collaborator"] else "unknown"}))')
     delivery = SimpleNamespace(send=AsyncMock())
@@ -238,3 +238,14 @@ async def test_message_actor_does_not_fall_back_when_explicit(monkeypatch, actor
     monkeypatch.setattr(policy, "admit_gateway_event", checker)
     await policy.check_gateway_message(SimpleNamespace(config=None), event)
     assert checker.call_args.args[1]["user_id"] == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('quote', [123, 'x' * policy.MAX_FRAME])
+async def test_invalid_or_oversized_quote_never_reaches_policy_command(monkeypatch, quote):
+    exchange = AsyncMock()
+    monkeypatch.setattr(policy, '_exchange', exchange)
+    command(monkeypatch, 'raise AssertionError("must not execute")')
+    result = await policy.admit_gateway_event('message', SOURCE, text='continue', reply_to_text=quote)
+    assert not result.allow
+    exchange.assert_not_awaited()
