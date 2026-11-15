@@ -16,7 +16,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 MAX_FRAME = 262144
-PAUSED = "Access could not be verified. Work is paused; verify any attempted changes before retrying."
+PAUSED = "The admission service did not return a verified result. Work is paused; check request status before retrying."
 
 
 @dataclass(frozen=True)

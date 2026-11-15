@@ -175,3 +175,12 @@ async def test_timeout_terminates_policy_descendants(monkeypatch, tmp_path):
             return True
     from tests.waiting import async_wait_until
     await async_wait_until(terminated, timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_checker_failure_does_not_assert_a_drive_write(monkeypatch):
+    monkeypatch.setattr(policy, '_settings', lambda: {'command':['/missing-policy']})
+    result = await policy.admit_gateway_event('message', SOURCE)
+    assert not result.allow
+    assert 'write' not in result.reply.lower()
+    assert 'check request status' in result.reply
