@@ -2,6 +2,8 @@
 import asyncio
 import json
 import sys
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 import pytest
 
 from gateway import admission_policy as policy
@@ -59,8 +61,26 @@ async def test_config_parse_failure_denies(tmp_path, monkeypatch):
     assert not (await policy.admit_gateway_event("message", SOURCE)).allow
 
 
+@pytest.mark.asyncio
+async def test_inbound_and_busy_stop_before_privileged_dispatch(monkeypatch):
+    from gateway.run_inbound import GatewayInboundMixin
+    from gateway.run_busy import GatewayBusySessionMixin
+    monkeypatch.setattr(policy, "admit_gateway_event", AsyncMock(return_value=policy.AdmissionDecision(False)))
+    # Real ingress methods; no session store, commands, memory or agent on this runner.
+    # A fallthrough therefore fails, rather than silently exercising a mocked downstream.
+    runner = SimpleNamespace(config=None, _scale_to_zero_note_real_inbound=lambda: None)
+    event = SimpleNamespace(source=SimpleNamespace(**SOURCE), internal=False, text="/approve", message_id="test")
+    assert await GatewayInboundMixin._hm_admit_event(runner, event) is None
+    assert await GatewayBusySessionMixin._handle_active_session_busy_message(runner, event, "test-session") is True
 
 
+@pytest.mark.asyncio
+async def test_control_hooks_stop_before_dispatch(monkeypatch):
+    from gateway.run_adapters import GatewayAdapterLifecycleMixin
+    monkeypatch.setattr(policy, "admit_gateway_event", AsyncMock(return_value=policy.AdmissionDecision(False)))
+    runner = SimpleNamespace()
+    await GatewayAdapterLifecycleMixin._handle_reaction_event(runner, SOURCE)
+    await GatewayAdapterLifecycleMixin._handle_gateway_platform_event(runner, {}, SOURCE)
 
 
 @pytest.mark.asyncio
@@ -78,8 +98,28 @@ async def test_cancellation_terminates_command(monkeypatch, tmp_path):
     assert not psutil.pid_exists(int(pid_file.read_text()))
 
 
+@pytest.mark.asyncio
+async def test_producer_denial_stops_before_hooks_and_admission(monkeypatch):
+    from contextlib import asynccontextmanager
+    from gateway.platforms import webhook_ingress
+    monkeypatch.setattr(policy, "admit_gateway_event", AsyncMock(return_value=policy.AdmissionDecision(False, "paused")))
+    @asynccontextmanager
+    async def scope(adapter, event):
+        yield SimpleNamespace(runner=SimpleNamespace(config=None))
+    monkeypatch.setattr(webhook_ingress, "producer_scope", scope)
+    event = SimpleNamespace(source=SOURCE, text="/approve", message_id="test-producer")
+    assert await webhook_ingress.admit_producer(None, event) is None
+    assert event._consumer_reply == "paused"
 
 
+@pytest.mark.asyncio
+async def test_telegram_callback_denial_stops_before_controls(monkeypatch):
+    from plugins.platforms.telegram.adapter import TelegramAdapter
+    monkeypatch.setattr(policy, "admit_gateway_event", AsyncMock(return_value=policy.AdmissionDecision(False)))
+    query = SimpleNamespace(from_user=SimpleNamespace(id="test-user"), answer=AsyncMock())
+    runner = SimpleNamespace(_callback_ctx=lambda query: {"chat_id": "test-chat", "chat_type": "private"})
+    await TelegramAdapter._handle_callback_query(runner, SimpleNamespace(callback_query=query), None)
+    query.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -99,6 +139,20 @@ async def test_policy_configuration_is_profile_scoped(tmp_path):
             reset_hermes_home_override(token)
 
 
+@pytest.mark.asyncio
+async def test_consumed_message_reply_keeps_thread_and_does_not_fall_through(monkeypatch):
+    from gateway.run_inbound import GatewayInboundMixin
+    from gateway.run_busy import GatewayBusySessionMixin
+    monkeypatch.setattr(policy, "admit_gateway_event", AsyncMock(return_value=policy.AdmissionDecision(False, "scoped result")))
+    adapter = SimpleNamespace(send=AsyncMock())
+    runner = SimpleNamespace(config=None, _delivery_adapter_for=lambda source: adapter,
+        _thread_metadata_for_source=lambda source, message: {"thread_id": "test-thread", "reply_to": message})
+    event = SimpleNamespace(source=SimpleNamespace(**SOURCE), internal=False, text="request", message_id="test-message")
+    assert await GatewayInboundMixin._hm_admit_event(runner, event) is None
+    adapter.send.assert_awaited_once_with("test-chat", "scoped result", metadata={"thread_id": "test-thread", "reply_to": "test-message"})
+    adapter.send.reset_mock()
+    assert await GatewayBusySessionMixin._handle_active_session_busy_message(runner, event, "test-session")
+    adapter.send.assert_awaited_once_with("test-chat", "scoped result", metadata={"thread_id": "test-thread", "reply_to": "test-message"})
 
 
 @pytest.mark.asyncio

@@ -212,6 +212,17 @@ class GatewayInboundMixin(
             self._queue_startup_restore_event(event)
             return None
 
+        if not is_internal:
+            from gateway.admission_policy import check_gateway_message
+            decision = await check_gateway_message(self, event)
+            if not decision.allow:
+                if decision.reply:
+                    adapter = self._delivery_adapter_for(source)
+                    if adapter:
+                        await adapter.send(source.chat_id, decision.reply,
+                                           metadata=self._thread_metadata_for_source(source, event.message_id))
+                return None
+
         if is_internal:
             return event, source, True
         if getattr(event, "_fifo_only", False):  # a slash command's queued turn: its command passed ingress

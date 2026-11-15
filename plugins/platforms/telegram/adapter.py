@@ -4344,6 +4344,12 @@ class TelegramAdapter(TelegramContactMixin, TelegramHeldInboundMixin, TelegramRe
         query = update.callback_query
         if not query:
             return
+        from gateway.admission_policy import admit_gateway_event
+        source = self._callback_ctx(query)
+        source.update(platform="telegram", user_id=str(query.from_user.id))
+        if not (await admit_gateway_event("callback", source)).allow:
+            await answer_callback(query, "Access could not be verified.")
+            return
         self._accept_update()
         data = query.data or ""
         cb = self._callback_ctx(query)
