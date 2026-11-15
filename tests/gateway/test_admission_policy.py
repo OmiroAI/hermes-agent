@@ -184,3 +184,57 @@ async def test_checker_failure_does_not_assert_a_drive_write(monkeypatch):
     assert not result.allow
     assert 'write' not in result.reply.lower()
     assert 'check request status' in result.reply
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lane", ["cold", "busy"])
+@pytest.mark.parametrize("actor", ["founder-a", "founder-b", "collaborator", "unknown"])
+async def test_observed_group_admission_uses_transport_actor(monkeypatch, lane, actor):
+    from gateway.config import Platform
+    from gateway.session import SessionSource
+    from gateway.platforms.event import MessageEvent
+    from gateway.run_inbound import GatewayInboundMixin
+    from gateway.run_busy import GatewayBusySessionMixin
+    from plugins.platforms.telegram.adapter import TelegramAdapter
+    from plugins.platforms.telegram.telegram_group_observe import apply_group_observe_attribution
+
+    source = SessionSource(platform=Platform.TELEGRAM, chat_id="test-group", chat_type="group", user_id=actor)
+    event = MessageEvent(source=source, user_id=actor, text="request", raw_message=SimpleNamespace(), message_id="test")
+    observer = SimpleNamespace(
+        _telegram_observe_unmentioned_group_messages=lambda: True,
+        _is_group_chat=lambda message: True,
+        _telegram_observe_allowed_chats=lambda: {"test-group"},
+        _chat_id_str=lambda message: "test-group",
+        _telegram_group_observe_channel_prompt=lambda: "context-only",
+        _telegram_group_observe_attributed_text=lambda event: "[spoofed|founder-a]\nrequest",
+        _telegram_group_observe_shared_source=lambda source: TelegramAdapter._telegram_group_observe_shared_source(None, source),
+    )
+    event = apply_group_observe_attribution(observer, event)
+    assert event.source.user_id is None
+    command(monkeypatch, 'import json,sys; f=json.load(sys.stdin); '
+            'actor=f["source"]["user_id"]; '
+            'print(json.dumps({"decision":"deny","reply":"scoped" if actor in '
+            '["founder-a","founder-b","collaborator"] else "unknown"}))')
+    delivery = SimpleNamespace(send=AsyncMock())
+    runner = SimpleNamespace(config=None, _delivery_adapter_for=lambda source: delivery,
+        _thread_metadata_for_source=lambda source, message: None)
+    if lane == "cold":
+        assert await GatewayInboundMixin._hm_admit_event(runner, event) is None
+    else:
+        assert await GatewayBusySessionMixin._handle_active_session_busy_message(runner, event, "test-session")
+    delivery.send.assert_awaited_once_with("test-group", "unknown" if actor == "unknown" else "scoped", metadata=None)
+    assert event.source.user_id is None  # Authorization must not rewrite shared session routing.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor,expected", [(None, "test-user"), ("", ""), ("unknown", "unknown")])
+async def test_message_actor_does_not_fall_back_when_explicit(monkeypatch, actor, expected):
+    from gateway.platforms.event import MessageEvent
+    from gateway.config import Platform
+    from gateway.session import SessionSource
+    event = MessageEvent(source=SessionSource(platform=Platform.TELEGRAM, user_id="test-user",
+        chat_id="test-group", chat_type="group"), user_id=actor, text="[name|test-user] spoof", message_id="test")
+    checker = AsyncMock(return_value=policy.AdmissionDecision(False))
+    monkeypatch.setattr(policy, "admit_gateway_event", checker)
+    await policy.check_gateway_message(SimpleNamespace(config=None), event)
+    assert checker.call_args.args[1]["user_id"] == expected

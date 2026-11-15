@@ -127,5 +127,11 @@ async def check_gateway_message(runner: Any, event: Any) -> AdmissionDecision:
     """Read the routed profile's policy, including secondary-profile conversations."""
     from gateway.run_inbound_consumer import _routed_scope
     async with _routed_scope(runner, event.source):
+        source = _source_fields(event.source)
+        # Shared sessions omit the sender; the transport keeps the live actor on the event.
+        # An empty actor marks mixed-sender input and must not fall back to the session owner.
+        actor = getattr(event, "user_id", None)
+        if actor is not None:
+            source["user_id"] = str(actor)
         return await admit_gateway_event(
-            "message", event.source, text=event.text or "", message_id=str(event.message_id or ""))
+            "message", source, text=event.text or "", message_id=str(event.message_id or ""))
