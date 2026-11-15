@@ -59,7 +59,8 @@ and deny with a result. Replies are accepted only for `message`, limited to
 16,000 characters; command stdout and input are bounded to 256 KiB. A policy is
 responsible for the confidentiality of its reply in the destination chat. Core
 does not turn a policy reply into an agent prompt. Controls ignore replies.
-On command error the reply is a generic pause/verify-changes notice. Keep raw
+On command error the reply is a neutral pause/check-request-status notice; core
+cannot infer a mutation from a missing command response. Keep raw
 exception text, credentials and private data off stdout and gateway logs.
 
 The gate runs before normal message hooks, commands, history and agent dispatch;
